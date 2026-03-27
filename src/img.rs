@@ -206,10 +206,10 @@ pub fn find_images<'a>()
             };
         }
 
-        i += 1;
-        if i == 7 {
-            break;
-        };
+        // i += 1;
+        // if i == 7 {
+        //     break;
+        // };
     }
 
     let time_elapsed = now.elapsed().as_secs_f64();

@@ -1,21 +1,25 @@
 use crate::img::{ImageData, ImageFormat};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SortBy {
     None,
     TimeCreated,
     Size,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Filter {
     Extension(ImageFormat),
+    StartsWith(String),
+    Contains(String),
 }
 
 impl Filter {
     pub fn matches(&self, data: &ImageData) -> bool {
         match self {
             Filter::Extension(image_format) => data.format == image_format.clone(),
+            Filter::StartsWith(phrase) => data.file_name.starts_with(phrase),
+            Filter::Contains(phrase) => data.file_name.contains(phrase),
         }
     }
 }
@@ -36,7 +40,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilterOptions {
     pub sortedby: SortBy,
     pub filter: Option<Filter>,

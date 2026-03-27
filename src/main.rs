@@ -15,7 +15,10 @@ pub use iced::{
     },
 };
 
-use crate::config::{Config, Filter, FilterOptions, SortBy};
+use crate::{
+    config::{Config, Filter, FilterOptions, SortBy},
+    img::ImageFormat,
+};
 
 #[derive(Debug, Clone)]
 enum Message {
@@ -87,37 +90,85 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 return Task::none();
             }
 
-            if let Some(filter) = filter_opts.filter {
-                if let Some(index) = state.config.images.get((pg * PAGESIZE + offset) as usize) {
+            let page_position: usize = (pg * PAGESIZE + offset) as usize;
+
+            if let Some(filter) = &filter_opts.filter {
+                if let Some(index) = state.config.images.get(page_position) {
                     if let Some(data) = state.images.get(*index) {
                         let index_cpy = index.clone();
-                        match &data.allocation {
+                        // let filter_opts_cpy = filter_opts.clone();
+                        match data.allocation {
                             None => image::allocate(Handle::from_path(&data.path)).map(move |x| {
-                                Message::ImageAllocated(x, index_cpy, pg, offset, filter_opts)
+                                Message::ImageAllocated(
+                                    x,
+                                    index_cpy,
+                                    pg,
+                                    offset,
+                                    filter_opts.clone(),
+                                )
                             }),
-                            Some(allocation) => {
-                                Task::done(Message::Allocate(pg, offset + 1, filter_opts))
-                            }
+                            Some(_) => Task::done(Message::Allocate(pg, offset + 1, filter_opts)),
                         }
                     } else {
                         Task::none()
                     }
                 } else {
-                    let images_len = state.images.len();
-                    while state.config.curr_index < images_len {
-                        let data = state.images.get(state.config.curr_index).expect("should always get a value because the index is lower than images.len()");
+                    while state.config.images.len() <= page_position {
+                        let data_opt = match filter_opts.sortedby {
+                            SortBy::None => state.images.get(state.config.curr_index),
+                            SortBy::TimeCreated => {
+                                state.bydate.get(state.config.curr_index).map(|i| {
+                                    state
+                                        .images
+                                        .get(*i)
+                                        .expect("should be there if its already in state.bydate")
+                                })
+                            }
+                            SortBy::Size => state.bysize.get(state.config.curr_index).map(|i| {
+                                state
+                                    .images
+                                    .get(*i)
+                                    .expect("should be there if its already in state.bysize")
+                            }),
+                        };
+
+                        state.config.curr_index += 1;
+
+                        let data = match data_opt {
+                            Some(x) => x,
+                            None => return Task::none(),
+                        };
 
                         if filter.matches(data) {
-                            state.config.images.push(state.config.curr_index);
-                            state.config.curr_index += 1;
-                            let index_cpy = data.index;
-                            return image::allocate(Handle::from_path(&data.path)).map(move |x| {
-                                Message::ImageAllocated(x, index_cpy, pg, offset, filter_opts)
-                            });
+                            // println!("Format: {:?}", data.format);
+                            state.config.images.push(data.index);
                         }
-                        state.config.curr_index += 1;
                     }
-                    Task::none()
+
+                    let data_opt = state.config.images.get(page_position).map(|i| {
+                        state
+                            .images
+                            .get(*i)
+                            .expect("should get cuz only valid indices are in images")
+                    });
+
+                    if let Some(data) = data_opt {
+                        let index_cpy = data.index;
+                        match data.allocation {
+                            None => image::allocate(Handle::from_path(&data.path)).map(move |x| {
+                                Message::ImageAllocated(
+                                    x,
+                                    index_cpy,
+                                    pg,
+                                    offset,
+                                    filter_opts.clone(),
+                                )
+                            }),
+                            Some(_) => Task::done(Message::Allocate(pg, offset + 1, filter_opts)),
+                        }
+                    } else {
+                        Task::none()
+                    }
                 }
             } else {
                 let index_opt: Option<usize> = match filter_opts.sortedby {
@@ -140,7 +191,13 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         match data.allocation {
                             Some(_) => Task::done(Message::Allocate(pg, offset + 1, filter_opts)),
                             None => image::allocate(handle).map(move |x| {
-                                Message::ImageAllocated(x, index_cpy, pg, offset, filter_opts)
+                                Message::ImageAllocated(
+                                    x,
+                                    index_cpy,
+                                    pg,
+                                    offset,
+                                    filter_opts.clone(),
+                                )
                             }),
                         }
                     } else {
@@ -153,17 +210,6 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
         }
         Message::ImageAllocated(result, index, pg, offset, filter_opts) => {
             if let Ok(allocation) = result {
-                // let index_opt: Option<usize> = match filter_opts.sortedby {
-                //     config::SortBy::None => Some((pg * PAGESIZE + offset) as usize),
-                //     config::SortBy::TimeCreated => {
-                //         state.bydate.get((pg * PAGESIZE + offset) as usize).copied()
-                //     }
-                //     config::SortBy::Size => {
-                //         state.bysize.get((pg * PAGESIZE + offset) as usize).copied()
-                //     }
-                // };
-
-                // if let Some(index) = index_opt {
                 let dataopt = state.images.get_mut(index);
 
                 if let Some(data) = dataopt {
@@ -186,7 +232,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
         }
         Message::SortBy(sortby) => {
             state.config.filter_opts.sortedby = sortby;
-            Task::done(Message::Filter(state.config.filter_opts.filter))
+            Task::done(Message::Filter(state.config.filter_opts.filter.clone()))
         }
         Message::Filter(filter_opt) => {
             state.config.filter_opts.filter = filter_opt;
@@ -199,60 +245,15 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
 }
 
 fn view(state: &AppState) -> Element<'_, Message> {
+    // println!("Images: {}", state.images.len());
+    // println!("By Date: {}", state.bydate.len());
+    // println!("By Size: {}", state.bysize.len());
+
+    // println!("Config images: {}", state.config.images.len());
+
     match &state.mode {
-        Mode::Viewer(path) => row![
-            Container::new(
-                Viewer::new(image::Handle::from_path(path))
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-            )
-            .width(Length::FillPortion(9)),
-            Container::new(
-                button("Back")
-                    .width(Length::FillPortion(1))
-                    .height(150)
-                    .on_press(Message::Mode(Mode::Explorer))
-            )
-            .width(Length::FillPortion(1))
-            .center_y(200)
-        ]
-        .padding(10)
-        .into(),
-        Mode::Explorer => row![
-            elements::images_column(state),
-            column![
-                button("Next")
-                    .width(150)
-                    .height(150)
-                    .on_press(Message::Page(state.page + 1)),
-                button("Previous")
-                    .width(150)
-                    .height(150)
-                    .on_press(Message::Page(if state.page == 0 {
-                        0
-                    } else {
-                        state.page - 1
-                    })),
-                text_input("Page number", &state.page.to_string()).on_input(Message::PageInput),
-                text("sort by: "),
-                row![
-                    button("By nothing")
-                        .width(150)
-                        .height(150)
-                        .on_press(Message::SortBy(SortBy::None)),
-                    button("By creation time")
-                        .width(150)
-                        .height(150)
-                        .on_press(Message::SortBy(SortBy::TimeCreated)),
-                    button("By file size")
-                        .width(150)
-                        .height(150)
-                        .on_press(Message::SortBy(SortBy::Size))
-                ]
-            ]
-        ]
-        .padding(10)
-        .into(),
+        Mode::Viewer(path) => elements::viewer(state, path),
+        Mode::Explorer => elements::explorer(state),
     }
 }
 
