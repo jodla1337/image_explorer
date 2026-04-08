@@ -4,5 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-iced = { version = "0.14.0", features = ["image", "wgpu"] }
+iced = { version = "0.14.0", features = ["image", "wgpu", "tokio"] }
+iced_aw = { git = "https://github.com/iced-rs/iced_aw", rev = "ea0eaddee85793631858eb6de0e0f797a48d9aeb" }
 image = "0.25.10"
+rand = "0.10.0"
+pretty-bytes = "0.2.2"
+chrono = "0.4.44"
+sysinfo = "0.38.4"
