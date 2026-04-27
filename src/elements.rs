@@ -1,42 +1,55 @@
 pub mod bar;
 
-use std::{path::PathBuf, time::SystemTime};
+use std::path::PathBuf;
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime};
+use chrono::DateTime;
 use iced::{
-    Color, Element, Length, Rectangle, Theme,
+    Alignment, Color, Element, Font, Length, Theme,
+    font::Weight,
     widget::{
-        Column, Container, Image, Text, button, column, container,
-        image::{self, Allocation, Viewer},
-        row, space, text, text_input,
+        Column, Container, Image, button, column, container,
+        image::{self, Viewer},
+        rich_text, row, space, span, text,
     },
 };
-use iced_aw::{ContextMenu, Menu, menu_bar};
+use iced_aw::ContextMenu;
 
 use crate::{
-    config::{Filter, FilterVariations, Order, SortBy},
+    config::{Order, SortBy},
     elements::bar::{footer, mymenu},
     img::LoadState,
 };
 
 use super::{AppState, Message, Mode, PAGESIZE, img::ImageData};
 
-pub fn home(state: &AppState) -> Element<'_, Message> {
-    fn get_allocation(state: &AppState) -> Option<&LoadState> {
-        state.images.get(state.home_image?)?.allocation.as_ref()
-    }
-
-    let container = match get_allocation(state) {
-        Some(LoadState::Allocated(allocation)) => Container::new(
-            Image::new(allocation.handle())
-                .width(Length::Fill)
-                .height(Length::Fill),
-        ),
-        _ => Container::new(text(""))
-            .style(|_| container::Style::default().background(Color::from_rgb(1.0, 0.0, 0.0))),
-    };
-
-    container.width(Length::Fill).height(Length::Fill).into()
+pub fn loader(state: &AppState) -> Element<'_, Message> {
+    container(
+        column![
+            space().height(Length::Fill),
+            text("Loading images")
+                .font(Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Default::default()
+                })
+                .align_y(Alignment::Center)
+                .size(36),
+            text(format!("{} images", state.loading.images_loaded))
+                .align_y(Alignment::Center)
+                .size(24),
+            text(format!(
+                "{:.2}s",
+                state.loading.started.elapsed().as_secs_f64()
+            ))
+            .size(24),
+            space().height(Length::Fill),
+        ]
+        .spacing(10)
+        .align_x(Alignment::Center)
+        .width(Length::Fill),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
 }
 
 pub fn viewer(state: &AppState, index: usize) -> Element<'_, Message> {
@@ -121,28 +134,49 @@ pub fn explorer(state: &AppState) -> Element<'_, Message> {
 }
 
 pub fn image_info(data: &ImageData) -> Element<'_, Message> {
-    fn subtext<'a>(content: impl text::IntoFragment<'a>) -> Text<'a> {
-        text(content)
+    fn subtext<'a>(
+        title: impl text::IntoFragment<'a>,
+        content: impl text::IntoFragment<'a>,
+    ) -> Element<'a, Message> {
+        let txt: text::Rich<'_, u8 /* compiler stops yapping */, Message> = rich_text![
+            span(title).font(Font {
+                weight: Weight::Bold,
+                ..Default::default()
+            }),
+            span(content)
+        ]
+        .wrapping(text::Wrapping::WordOrGlyph);
+
+        txt.into()
     }
 
     let content = column![
-        subtext(format!("File name: {}", data.file_name)),
-        subtext(format!(
-            "Path: {}",
-            data.path.parent().unwrap_or(&data.path).to_string_lossy()
-        )),
-        subtext(format!(
-            "Size: {:#}",
-            pretty_bytes::converter::convert(data.size as f64)
-        )),
-        subtext(format!(
-            "Time created: {}",
-            DateTime::from_timestamp_secs(data.time_created as i64).unwrap_or_default()
-        )),
-        subtext(format!(
-            "Time modified: {}",
-            DateTime::from_timestamp_secs(data.time_modified as i64).unwrap_or_default()
-        )),
+        subtext("File name: ", format!(": {}", data.file_name)),
+        subtext(
+            "Path: ",
+            format!(
+                "{}",
+                data.path.parent().unwrap_or(&data.path).to_string_lossy()
+            )
+        ),
+        subtext(
+            "Size: ",
+            format!("{:#}", pretty_bytes::converter::convert(data.size as f64))
+        ),
+        subtext(
+            "Time created: ",
+            format!(
+                "{}",
+                DateTime::from_timestamp_secs(data.time_created as i64).unwrap_or_default()
+            )
+        ),
+        subtext(
+            "Time modified: ",
+            format!(
+                "{}",
+                DateTime::from_timestamp_secs(data.time_modified as i64).unwrap_or_default()
+            )
+        ),
     ]
     .padding(10)
     .spacing(10);
@@ -171,18 +205,13 @@ pub fn images_column(state: &AppState) -> Column<'_, Message> {
     while i < PAGESIZE as usize {
         let mut row_ = row![];
         for _ in 0..4 {
-            let data = if state.config.query.filter.any() {
-                state
-                    .config
-                    .images
-                    .get(page_position + i)
-                    .map(|index| {
-                        state
-                            .images
-                            .get(*index)
-                            .expect("should be there if already in config.images")
-                    })
-                    .unwrap_or(&state.default_img)
+            let data_opt = if state.config.query.filter.any() {
+                state.config.images.get(page_position + i).map(|index| {
+                    state
+                        .images
+                        .get(*index)
+                        .expect("should be there if already in config.images")
+                })
             } else {
                 let index_opt_fn = || {
                     if let Some(sortby) = &state.config.query.sortedby {
@@ -210,15 +239,21 @@ pub fn images_column(state: &AppState) -> Column<'_, Message> {
                 let index_opt = index_opt_fn();
 
                 if let Some(index) = index_opt {
-                    state.images.get(index).unwrap_or(&state.default_img)
+                    state.images.get(index)
                 } else {
-                    &state.default_img
+                    None
                 }
             };
 
             // let handle = data.allocation.as_ref().map(|x| x.handle());
 
-            let content: Element<'_, Message> = match &data.allocation {
+            let allocation = if let Some(data) = data_opt {
+                &data.allocation
+            } else {
+                &None
+            };
+
+            let content: Element<'_, Message> = match allocation {
                 Some(LoadState::Allocated(allocation)) => Image::new(allocation.handle())
                     .width(Length::Fill)
                     .height(Length::Fill)
@@ -235,31 +270,15 @@ pub fn images_column(state: &AppState) -> Column<'_, Message> {
                 .height(Length::FillPortion(1))
                 .padding(0);
 
-            if data.allocation.is_some() {
+            if allocation.is_some() {
                 frame = frame.on_press(Message::Mode(Mode::Viewer(page_position + i)))
             }
 
-            // let mut frame: Element<'_, Message> = match &data.allocation {
-            //     Some(allocation) => button(
-            //         Container::new(Image::new(allocation.handle()).width(200).height(200))
-            //             .width(200)
-            //             .height(200),
-            //     )
+            let child: Element<'_, Message> = if let Some(data) = data_opt
+                && data.allocation.is_some()
+            {
+                let path = data.path.clone();
 
-            //     .into(),
-            //     None => Container::new(
-            //         text("Error")
-            //             .color(Color::from_rgb(1.0, 0.02, 0.02))
-            //             .center(),
-            //     )
-            //     .width(200)
-            //     .height(200)
-            //     .into(),
-            // };
-
-            let path = data.path.clone();
-
-            let child: Element<'_, Message> = if data.allocation.is_some() {
                 ContextMenu::new(frame, move || {
                     mycontextmenu::overlay(path.clone(), data.index, true)
                 })
@@ -295,8 +314,6 @@ const BORDER_RADIUS: u32 = 10;
 pub mod mycontextmenu {
     use iced::{Border, Color, border::Radius, widget::container};
 
-    use crate::Mode;
-
     use super::{
         BORDER_RADIUS, Container, Element, Length, Message, PathBuf, Theme, button, column,
     };
@@ -319,7 +336,13 @@ pub mod mycontextmenu {
 
         col = col.extend([
             button("Copy path")
-                .style(button_style)
+                .style(move |theme, status| {
+                    let mut style = button_style(theme, status);
+                    if !isexplorer {
+                        style.border = Border::default().rounded(Radius::new(0).top(BORDER_RADIUS));
+                    }
+                    style
+                })
                 .width(Length::Fill)
                 .on_press(Message::ContextMenuOpt(ContextMenuOpt::CopyPath(
                     path.clone(),

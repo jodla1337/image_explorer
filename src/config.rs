@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::img::{ImageData, ImageFormat};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,14 +34,16 @@ pub enum FilterVariations {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Filter {
-    pub extension: Option<ImageFormat>,
+    pub extensions: Option<HashSet<ImageFormat>>,
     pub startswith: Option<String>,
     pub contains: Option<String>,
 }
 
 impl Filter {
     pub fn matches(&self, data: &ImageData) -> bool {
-        self.extension.is_none_or(|format| format == data.format)
+        self.extensions
+            .as_ref()
+            .is_none_or(|formats| formats.contains(&data.format))
             && self
                 .startswith
                 .as_ref()
@@ -51,13 +55,29 @@ impl Filter {
     }
 
     pub fn any(&self) -> bool {
-        self.extension.is_some() || self.startswith.is_some() || self.contains.is_some()
+        self.extensions.as_ref().is_some_and(|x| !x.is_empty())
+            || self.startswith.is_some()
+            || self.contains.is_some()
     }
 
     pub fn filter(&mut self, variation: FilterVariations) {
         match variation {
             FilterVariations::None => *self = Filter::default(),
-            FilterVariations::Extension(image_format) => self.extension = image_format,
+            FilterVariations::Extension(image_format) => {
+                match (self.extensions.as_mut(), image_format) {
+                    (Some(set), Some(format)) => {
+                        if !set.insert(format) {
+                            set.remove(&format);
+                        }
+                    }
+                    (None, Some(format)) => {
+                        let mut set = HashSet::new();
+                        set.insert(format);
+                        self.extensions = Some(set);
+                    }
+                    (_, None) => self.extensions = None,
+                }
+            }
             FilterVariations::StartsWith(phrase_opt) => self.startswith = phrase_opt,
             FilterVariations::Contains(phrase_opt) => self.contains = phrase_opt,
         }

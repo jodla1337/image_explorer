@@ -1,22 +1,9 @@
-use core::num;
-
 use iced::{
     Subscription,
     keyboard::{self, Key, key::Named},
 };
 
 use crate::{AppState, Message, Mode};
-
-pub fn slideshow(state: &AppState) -> Subscription<Message> {
-    if let Mode::Home = &state.mode {
-        iced::time::every(iced::time::seconds(3)).map(|_| {
-            println!("hej");
-            Message::HomeImage
-        })
-    } else {
-        Subscription::none()
-    }
-}
 
 pub fn keyboard_input(state: &AppState) -> Subscription<Message> {
     keyboard::listen().with((state.page, state.mode)).map(

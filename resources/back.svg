@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="512"
+   height="512"
+   viewBox="0 0 512 512"
+   version="1.1"
+   id="svg1"
+   sodipodi:docname="back.svg"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   inkscape:export-filename="..\OneDrive\Pulpit\kurwa\rust\imageexplorer\resources\back.png"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="px"
+     showgrid="true"
+     inkscape:zoom="0.5"
+     inkscape:cx="-44"
+     inkscape:cy="299"
+     inkscape:window-width="1920"
+     inkscape:window-height="1009"
+     inkscape:window-x="1912"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1">
+    <inkscape:grid
+       id="grid1"
+       units="px"
+       originx="0"
+       originy="0"
+       spacingx="4"
+       spacingy="4"
+       empcolor="#0099e5"
+       empopacity="0.30196078"
+       color="#0099e5"
+       opacity="0.14901961"
+       empspacing="4"
+       enabled="true"
+       visible="true" />
+  </sodipodi:namedview>
+  <defs
+     id="defs1" />
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <g
+       id="g1"
+       transform="translate(0,16)">
+      <rect
+         style="fill:#1d2a3e;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:2;stroke-dasharray:none;stroke-opacity:1;paint-order:normal"
+         id="rect1"
+         width="256"
+         height="64"
+         x="160"
+         y="352"
+         rx="32"
+         ry="32" />
+      <rect
+         style="fill:#1d2a3e;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:2;stroke-dasharray:none;stroke-opacity:1;paint-order:normal"
+         id="rect1-2"
+         width="416"
+         height="64"
+         x="1.3877788e-16"
+         y="160"
+         rx="32"
+         ry="32" />
+      <path
+         style="fill:#1d2a3e;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:2;stroke-dasharray:none;stroke-opacity:1;paint-order:normal"
+         d="M 392,416 Z"
+         id="path1" />
+      <path
+         id="path3"
+         style="fill:#1d2a3e;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:2;stroke-dasharray:none;stroke-opacity:1;paint-order:normal"
+         d="m 384,160 v 64 a 64,64 0 0 1 55.42578,32 64,64 0 0 1 0,64 A 64,64 0 0 1 384,352 v 64 a 128,128 0 0 0 110.85156,-64 128,128 0 0 0 0,-128 A 128,128 0 0 0 384,160 Z" />
+      <rect
+         style="fill:#1d2a3e;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:2;stroke-dasharray:none;stroke-opacity:1;paint-order:normal"
+         id="rect1-2-6"
+         width="192"
+         height="64"
+         x="126.43308"
+         y="81.137085"
+         rx="32"
+         ry="32"
+         transform="rotate(45)" />
+      <rect
+         style="fill:#1d2a3e;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:2;stroke-dasharray:none;stroke-opacity:1;paint-order:normal"
+         id="rect1-2-6-8"
+         width="192"
+         height="64"
+         x="-145.09592"
+         y="-190.39192"
+         rx="32"
+         ry="32"
+         transform="matrix(0.70710678,-0.70710678,-0.70710678,-0.70710678,0,0)" />
+    </g>
+  </g>
+</svg>

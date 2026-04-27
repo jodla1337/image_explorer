@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 pub mod config;
 pub mod elements;
 pub mod img;
@@ -5,9 +7,10 @@ pub mod resources;
 pub mod subscriptions;
 pub mod utils;
 
-use iced::window::Settings;
+use iced::window::{Settings, icon};
 use img::ImageData;
-use std::{fmt::Debug, path::PathBuf, process::Command, sync::Arc};
+use sipper::sipper;
+use std::{fmt::Debug, path::PathBuf, process::Command};
 
 pub use iced::{
     Color, Element, Length, Task, clipboard,
@@ -20,10 +23,9 @@ pub use iced::{
 };
 
 use crate::{
-    config::{Config, Filter, FilterVariations, Order, Query, SortBy},
+    config::{Config, FilterVariations, Order, Query, SortBy},
     elements::mycontextmenu::ContextMenuOpt,
-    img::LoadState,
-    resources::{RESOURCES, Resources},
+    img::{Counter, LoadState, find_images},
     utils::data_from_pagepos,
 };
 
@@ -31,7 +33,8 @@ use crate::{
 pub enum Message {
     None,
     Init,
-    AllocatedResource(String, Result<Allocation, image::Error>),
+    ImageCount(usize),
+    ImagesLoaded((Vec<ImageData>, Vec<usize>, Vec<usize>, Vec<usize>, Counter)),
     AllocateOne(usize),
     AllocatedOne(usize, Result<Allocation, image::Error>),
     Page(u32),
@@ -51,8 +54,6 @@ pub enum Message {
     ClearFilters,
     ClearQuery,
     ContextMenuOpt(ContextMenuOpt),
-    HomeImage,
-    HomeImageAllocated(usize, Result<Allocation, image::Error>),
 }
 
 #[derive(Debug, Clone)]
@@ -63,7 +64,7 @@ pub enum PageInput {
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Hash)]
 pub enum Mode {
-    Home,
+    Loader,
     Viewer(usize),
     Explorer,
 }
@@ -76,10 +77,8 @@ pub struct AppState {
     bymodification: Vec<usize>,
     bysize: Vec<usize>,
     config: Config,
-    default_img: ImageData,
-    home_image: Option<usize>,
     page_input: Option<String>,
-    resources: Resources,
+    loading: img::LoadingInfo,
 }
 
 impl AppState {
@@ -109,21 +108,16 @@ impl AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        let (images, bysize, bycreation, bymodification) =
-            img::find_images().expect("Error getting images from the disk");
-
         let state = Self {
-            mode: Mode::Explorer,
+            mode: Mode::Loader,
             page: 0u32,
-            images,
-            bycreation,
-            bymodification,
-            bysize,
+            images: Default::default(),
+            bycreation: Default::default(),
+            bymodification: Default::default(),
+            bysize: Default::default(),
             config: Default::default(),
-            default_img: Default::default(),
-            home_image: None,
             page_input: None,
-            resources: Resources::default(),
+            loading: Default::default(),
         };
 
         state
@@ -136,27 +130,37 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
     match message {
         Message::None => Task::none(),
         Message::Init => {
-            let dir = Resources::dir();
+            let load_imgs = Task::sip(
+                sipper(|tx| find_images(tx)),
+                |size| Message::ImageCount(size),
+                |images_n_counter| Message::ImagesLoaded(images_n_counter),
+            );
 
-            let tasks = RESOURCES
-                .iter()
-                .map(|x| (Handle::from_path(&dir.join(x)), *x))
-                .map(|(handle, key)| {
-                    image::allocate(handle)
-                        .map(|res| Message::AllocatedResource(key.to_string(), res))
-                })
-                .reduce(|x1, x2| x1.chain(x2))
-                .unwrap_or(Task::none());
-
-            Task::done(Message::Allocate(0, 0, Query::default())).chain(tasks)
+            load_imgs
         }
-        Message::AllocatedResource(key, res) => {
-            if let Ok(allocation) = res {
-                let _ = state.resources.add(&key, allocation);
-            }
-
+        Message::ImageCount(count) => {
+            state.loading.images_loaded = count;
             Task::none()
         }
+        Message::ImagesLoaded((images, bysize, bycreation, bymodification, counter)) => {
+            state.images = images;
+            state.bysize = bysize;
+            state.bycreation = bycreation;
+            state.bymodification = bymodification;
+
+            state.loading.counter = counter;
+            state.loading.time_loading = state.loading.started.elapsed();
+
+            Task::done(Message::Allocate(0, 0, Query::default()))
+                .chain(Task::done(Message::Mode(Mode::Explorer)))
+        }
+        // Message::AllocatedResource(key, res) => {
+        //     if let Ok(allocation) = res {
+        //         let _ = state.resources.add(&key, allocation);
+        //     }
+
+        //     Task::none()
+        // }
         Message::AllocateOne(index) => {
             if let Some(data) = state.images.get(index) {
                 if data.allocation.is_none() {
@@ -379,7 +383,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     match result {
                         Ok(allocation) => LoadState::Allocated(allocation),
                         Err(err) => {
-                            println!("{:?}", err);
+                            // println!("{:?}", err);
                             LoadState::Error(err)
                         }
                     }
@@ -494,42 +498,6 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
         Message::ClearQuery => {
             Task::done(Message::ClearFilters).chain(Task::done(Message::SortBy(None)))
         }
-        Message::HomeImage => match state.mode {
-            Mode::Home => {
-                let index = rand::random_range(0..state.images.len());
-
-                let data = &state.images[index];
-
-                if let None = &data.allocation {
-                    image::allocate(Handle::from_path(&data.path))
-                        .map(move |a| Message::HomeImageAllocated(index, a))
-                } else {
-                    Task::none()
-                }
-            }
-            _ => Task::none(),
-        },
-        Message::HomeImageAllocated(index, result) => {
-            match result {
-                Ok(allocation) => {
-                    state.home_image = Some(index);
-                    state
-                        .images
-                        .get_mut(index)
-                        .expect("home_image is always valid")
-                        .allocation = Some(LoadState::Allocated(allocation));
-                }
-                Err(err) => {
-                    state
-                        .images
-                        .get_mut(index)
-                        .expect("index is always valid")
-                        .allocation = Some(LoadState::Error(err))
-                }
-            };
-
-            Task::none()
-        }
         Message::ContextMenuOpt(context_menu_opt) => match context_menu_opt {
             ContextMenuOpt::View(index) => Task::done(Message::Mode(Mode::Viewer(index))),
             ContextMenuOpt::CopyPath(path) => {
@@ -547,10 +515,9 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         }
                     };
 
-                    // println!("{}", path_arg);
-
                     if let Err(_) = Command::new("explorer")
-                        .arg(format!("/select,{}", path_arg))
+                        .arg("/select,")
+                        .arg(path_arg)
                         .spawn()
                     {
                         println!("Error launching the file explorer");
@@ -571,18 +538,20 @@ fn view(state: &AppState) -> Element<'_, Message> {
     // println!("Config images: {}", state.config.images.len());
 
     match &state.mode {
-        Mode::Home => elements::home(state),
         Mode::Viewer(index) => elements::viewer(state, *index),
         Mode::Explorer => elements::explorer(state),
+        Mode::Loader => elements::loader(state),
     }
 }
 
 fn main() -> iced::Result {
     iced::application(boot, update, view)
         .window(Settings {
-            ..Settings::default()
+            icon: icon::from_file(resources::dir().join("icon.png")).ok(),
+            ..Default::default()
         })
-        .subscription(subscriptions::slideshow)
+        .antialiasing(false)
+        .title("Image Explorer")
         .subscription(subscriptions::keyboard_input)
         .theme(iced::Theme::CatppuccinMocha /* text color #1d2a3e */)
         .run()

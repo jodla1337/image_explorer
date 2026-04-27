@@ -1,27 +1,30 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    env,
+    collections::{BTreeMap, VecDeque},
     fmt::Display,
     fs::{self, DirEntry},
-    io::Write,
-    os::windows::fs::MetadataExt,
     path::PathBuf,
-    str::FromStr,
-    sync::mpsc,
-    thread,
     time::{Duration, Instant, SystemTime},
 };
 
 use iced::widget::image::{self, Allocation};
 use sysinfo::Disks;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ImageFormat {
     Jpg,
     Png,
     Bmp,
     Webp,
     Gif,
+    Pnm,
+    Tiff,
+    Tga,
+    Dds,
+    Ico,
+    Hdr,
+    Exr,
+    Avif,
+    Qoi,
 }
 
 impl ImageFormat {
@@ -32,10 +35,20 @@ impl ImageFormat {
             "bmp" => Some(ImageFormat::Bmp),
             "webp" => Some(ImageFormat::Webp),
             "gif" => Some(ImageFormat::Gif),
+            "pnm" => Some(ImageFormat::Pnm),
+            "tif" => Some(ImageFormat::Tiff),
+            "tga" => Some(ImageFormat::Tga),
+            "dds" => Some(ImageFormat::Dds),
+            "ico" => Some(ImageFormat::Ico),
+            "hdr" => Some(ImageFormat::Hdr),
+            "exr" => Some(ImageFormat::Exr),
+            "avif" => Some(ImageFormat::Avif),
+            "qoi" => Some(ImageFormat::Qoi),
             _ => None,
         }
     }
 
+    #[allow(dead_code)]
     fn to_string(&self) -> String {
         match self {
             ImageFormat::Jpg => "jpg".to_string(),
@@ -43,6 +56,15 @@ impl ImageFormat {
             ImageFormat::Bmp => "bmp".to_string(),
             ImageFormat::Webp => "webp".to_string(),
             ImageFormat::Gif => "gif".to_string(),
+            ImageFormat::Pnm => "pnm".to_string(),
+            ImageFormat::Tiff => "tif".to_string(),
+            ImageFormat::Tga => "tga".to_string(),
+            ImageFormat::Dds => "dds".to_string(),
+            ImageFormat::Ico => "ico".to_string(),
+            ImageFormat::Hdr => "hdr".to_string(),
+            ImageFormat::Exr => "exr".to_string(),
+            ImageFormat::Avif => "avif".to_string(),
+            ImageFormat::Qoi => "qoi".to_string(),
         }
     }
 
@@ -53,25 +75,56 @@ impl ImageFormat {
             ImageFormat::Bmp => counter.bmp += 1,
             ImageFormat::Webp => counter.webp += 1,
             ImageFormat::Gif => counter.gif += 1,
+            ImageFormat::Pnm => counter.pnm += 1,
+            ImageFormat::Tiff => counter.tif += 1,
+            ImageFormat::Tga => counter.tga += 1,
+            ImageFormat::Dds => counter.dds += 1,
+            ImageFormat::Ico => counter.ico += 1,
+            ImageFormat::Hdr => counter.hdr += 1,
+            ImageFormat::Exr => counter.exr += 1,
+            ImageFormat::Avif => counter.avif += 1,
+            ImageFormat::Qoi => counter.qoi += 1,
         };
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub struct Counter {
     jpg: u32,
     png: u32,
     bmp: u32,
     webp: u32,
     gif: u32,
+    pnm: u32,
+    tif: u32,
+    tga: u32,
+    dds: u32,
+    ico: u32,
+    hdr: u32,
+    exr: u32,
+    avif: u32,
+    qoi: u32,
 }
 
 impl Display for Counter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "jpg: {}\npng: {}\nbmp: {}\nwebp: {}\ngif: {}",
-            self.jpg, self.png, self.bmp, self.webp, self.gif
+            "JPEG: {}\nPNG: {}\nBMP: {}\nWebP: {}\nGIF: {}\nPNM: {}\nTIFF: {}\nTGA: {}\nDDS: {}\nICO: {}\nHDR: {}\nOpenEXR: {}\nAVIF: {}\nQOI: {}",
+            self.jpg,
+            self.png,
+            self.bmp,
+            self.webp,
+            self.gif,
+            self.pnm,
+            self.tif,
+            self.tga,
+            self.dds,
+            self.ico,
+            self.hdr,
+            self.exr,
+            self.avif,
+            self.qoi
         )
     }
 }
@@ -94,59 +147,30 @@ pub enum LoadState {
     Error(image::Error),
 }
 
-impl Default for ImageData {
-    fn default() -> Self {
-        let path = env::current_exe()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join(PathBuf::from_str("404.jpg").unwrap());
+pub struct LoadingInfo {
+    pub images_loaded: usize,
+    pub started: Instant,
+    pub time_loading: Duration,
+    pub counter: Counter,
+}
 
+impl Default for LoadingInfo {
+    fn default() -> Self {
         Self {
-            file_name: "404.jpg".to_string(),
-            format: ImageFormat::Jpg,
-            path: path.clone(),
-            allocation: None,
-            size: 0,
-            time_created: 0,
-            time_modified: 0,
-            index: 0,
+            started: Instant::now(),
+            images_loaded: Default::default(),
+            time_loading: Default::default(),
+            counter: Default::default(),
         }
     }
 }
 
-// struct SortedBy {
-//     indices: Vec<usize>,
-//     by: u64,
-// }
-
-// impl Ord for SortedBy {
-//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-//         self.by.cmp(&other.by)
-//     }
-// }
-
-// impl Eq for SortedBy {}
-
-// impl PartialOrd for SortedBy {
-//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-//         self.by.partial_cmp(&other.by)
-//     }
-// }
-
-// impl PartialEq for SortedBy {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.by == other.by
-//     }
-// }
-
-pub fn find_images<'a>()
--> Result<(Vec<ImageData>, Vec<usize>, Vec<usize>, Vec<usize>), Box<dyn std::error::Error>> {
-    let now = Instant::now();
-
+pub async fn find_images(
+    mut tx: sipper::Sender<usize>,
+) -> (Vec<ImageData>, Vec<usize>, Vec<usize>, Vec<usize>, Counter) {
     let disks = Disks::new_with_refreshed_list();
 
-    let mut directories: Vec<PathBuf> = disks
+    let mut directories: VecDeque<PathBuf> = disks
         .iter()
         .map(|disk| disk.mount_point().to_path_buf())
         .collect();
@@ -159,91 +183,47 @@ pub fn find_images<'a>()
 
     let mut counter = Counter::default();
 
-    let mut i = 0;
-
     let mut index: usize = 0;
-    let (finished_tx, finished_rx) = mpsc::channel::<bool>();
-    let (progress_tx, progress_rx) = mpsc::channel::<usize>();
-
-    let t = thread::spawn(move || {
-        // print!("Loading");
-
-        // 'outer: loop {
-        //     for _ in 0..5 {
-        //         print!(".");
-        //         let _ = std::io::stdout().flush();
-        //         thread::sleep(Duration::from_secs(1));
-        //         if finished_rx.try_recv().is_ok_and(|x| x) {
-        //             break 'outer;
-        //         };
-        //     }
-        //     print!("\u{8}\u{8}\u{8}\u{8}\u{8}");
-        //     print!("     ");
-        //     print!("\u{8}\u{8}\u{8}\u{8}\u{8}");
-        //     let _ = std::io::stdout().flush();
-        // }
-
-        loop {
-            let progress = progress_rx.recv();
-            print!("\r");
-            let _ = std::io::stdout().flush();
-
-            print!("Loading - ");
-
-            if let Ok(length) = progress {
-                print!("{} images", length);
-            } else {
-                break;
-            }
-
-            let _ = std::io::stdout().flush();
-        }
-    });
 
     while !directories.is_empty() {
-        // let entries = directories
-        //     .iter()
-        //     .filter_map(|path| match fs::read_dir(path) {
-        //         Ok(x) => Some(x),
-        //         Err(_) => None,
-        //     })
-        //     .flatten()
-        //     .filter_map(|x| x.ok())
-        //     .collect::<Vec<DirEntry>>();
+        let dir = directories
+            .pop_front()
+            .expect("it should contain directories because of the loop condition");
 
-        let curr_directories = directories.clone();
-        directories.clear();
+        let entries: Vec<DirEntry> = match fs::read_dir(dir) {
+            Ok(x) => x.filter_map(|entry| entry.ok()).collect(),
+            Err(_) => continue,
+        };
 
-        for dir in &curr_directories {
-            let entries: Vec<DirEntry> = match fs::read_dir(dir) {
-                Ok(x) => x.filter_map(|entry| entry.ok()).collect(),
-                Err(_) => continue,
+        for entry in &entries {
+            let entry_file_type = if let Ok(x) = entry.file_type() {
+                x
+            } else {
+                continue;
             };
 
-            for entry in &entries {
-                match entry.file_type()?.is_dir() {
-                    true => {
-                        directories.push(entry.path());
-                    }
-                    false => {
-                        let path = entry.path();
+            match entry_file_type.is_dir() {
+                true => {
+                    directories.push_back(entry.path());
+                }
+                false => {
+                    let path = entry.path();
 
-                        let file_extension = path
-                            .extension()
-                            .unwrap_or_default()
-                            .to_str()
-                            .unwrap_or_default()
-                            .to_owned();
-                        if let Some(file_name_osstring) = path.file_name() {
-                            if let (Some(extension), Some(file_name)) = (
-                                ImageFormat::from_string(&file_extension),
-                                file_name_osstring.to_str(),
-                            ) {
-                                extension.add_to_counter(&mut counter);
+                    let file_extension = path
+                        .extension()
+                        .unwrap_or_default()
+                        .to_str()
+                        .unwrap_or_default()
+                        .to_owned();
+                    if let Some(file_name_osstring) = path.file_name() {
+                        if let (Some(extension), Some(file_name)) = (
+                            ImageFormat::from_string(&file_extension),
+                            file_name_osstring.to_str(),
+                        ) {
+                            extension.add_to_counter(&mut counter);
 
-                                let (file_size, time_created, time_modified) = if let Ok(metadata) =
-                                    entry.metadata()
-                                {
+                            let (file_size, time_created, time_modified) =
+                                if let Ok(metadata) = entry.metadata() {
                                     let file_size = metadata.len();
                                     let time_created = if let Ok(created) = metadata.created() {
                                         if let Ok(since_epoch) =
@@ -274,72 +254,52 @@ pub fn find_images<'a>()
                                     (0, 0, 0)
                                 };
 
-                                let imgdata = ImageData {
-                                    file_name: file_name.to_string(),
-                                    format: extension,
-                                    path: path.clone(),
-                                    allocation: None,
-                                    size: file_size,
-                                    time_created,
-                                    time_modified,
-                                    index,
-                                };
+                            let imgdata = ImageData {
+                                file_name: file_name.to_string(),
+                                format: extension,
+                                path: path.clone(),
+                                allocation: None,
+                                size: file_size,
+                                time_created,
+                                time_modified,
+                                index,
+                            };
 
-                                if file_size != 0 {
-                                    bysize
-                                        .entry(file_size)
-                                        .and_modify(|v| v.push(index))
-                                        .or_insert(vec![index]);
-                                }
-
-                                if time_created != 0 {
-                                    bycreation
-                                        .entry(time_created)
-                                        .and_modify(|v| v.push(index))
-                                        .or_insert(vec![index]);
-                                }
-
-                                if time_modified != 0 {
-                                    bymodification
-                                        .entry(time_modified)
-                                        .and_modify(|v| v.push(index))
-                                        .or_insert(vec![index]);
-                                }
-
-                                images.push(imgdata);
-
-                                index += 1;
+                            if file_size != 0 {
+                                bysize
+                                    .entry(file_size)
+                                    .and_modify(|v| v.push(index))
+                                    .or_insert(vec![index]);
                             }
+
+                            if time_created != 0 {
+                                bycreation
+                                    .entry(time_created)
+                                    .and_modify(|v| v.push(index))
+                                    .or_insert(vec![index]);
+                            }
+
+                            if time_modified != 0 {
+                                bymodification
+                                    .entry(time_modified)
+                                    .and_modify(|v| v.push(index))
+                                    .or_insert(vec![index]);
+                            }
+
+                            images.push(imgdata);
+
+                            index += 1;
                         }
                     }
-                };
-            }
-            let _ = progress_tx.send(images.len());
+                }
+            };
         }
-        i += 1;
-        if i == 5 {
-            break;
-        };
+        let _ = tx.send(images.len()).await;
     }
-
-    drop(progress_tx);
-    // finished_tx.send(true).unwrap();
-
-    t.join().unwrap();
-
-    let time_elapsed = now.elapsed().as_secs_f64();
-
-    println!(
-        "\rExecuted in {:.2}s. Found {} items.",
-        time_elapsed,
-        images.len()
-    );
-
-    println!("{counter}");
 
     let bycreation: Vec<usize> = bycreation.values().flatten().copied().collect();
     let bymodification: Vec<usize> = bymodification.values().flatten().copied().collect();
     let bysize: Vec<usize> = bysize.values().flatten().copied().collect();
 
-    Ok((images, bysize, bycreation, bymodification))
+    (images, bysize, bycreation, bymodification, counter)
 }
