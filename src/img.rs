@@ -3,6 +3,7 @@ use std::{
     fmt::Display,
     fs::{self, DirEntry},
     path::PathBuf,
+    sync::mpsc,
     time::{Duration, Instant, SystemTime},
 };
 
@@ -185,115 +186,87 @@ pub async fn find_images(
 
     let mut index: usize = 0;
 
+    let cores = num_cpus::get_physical();
+
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(cores)
+        .build()
+        .unwrap();
+
+    // pool.scope(|s| s.spawn);
+
     while !directories.is_empty() {
-        let dir = directories
-            .pop_front()
-            .expect("it should contain directories because of the loop condition");
+        let mut pooled_dirs = Vec::new();
 
-        let entries: Vec<DirEntry> = match fs::read_dir(dir) {
-            Ok(x) => x.filter_map(|entry| entry.ok()).collect(),
-            Err(_) => continue,
-        };
+        for _ in 0..cores {
+            match directories.pop_front() {
+                Some(dir) => pooled_dirs.push(dir),
+                None => break,
+            }
+        }
 
-        for entry in &entries {
-            let entry_file_type = if let Ok(x) = entry.file_type() {
-                x
-            } else {
-                continue;
-            };
+        let (dirs_tx, dirs_rx) = mpsc::channel::<Vec<PathBuf>>();
+        let (imgs_tx, imgs_rx) = mpsc::channel::<Vec<ImageData>>();
 
-            match entry_file_type.is_dir() {
-                true => {
-                    directories.push_back(entry.path());
-                }
-                false => {
-                    let path = entry.path();
+        pool.scope(|s| {
+            for dir in &pooled_dirs {
+                s.spawn(|_| {
+                    let (found_dirs, found_imgs) = search_directory(dir);
 
-                    let file_extension = path
-                        .extension()
-                        .unwrap_or_default()
-                        .to_str()
-                        .unwrap_or_default()
-                        .to_owned();
-                    if let Some(file_name_osstring) = path.file_name() {
-                        if let (Some(extension), Some(file_name)) = (
-                            ImageFormat::from_string(&file_extension),
-                            file_name_osstring.to_str(),
-                        ) {
-                            extension.add_to_counter(&mut counter);
+                    let _ = dirs_tx.send(found_dirs);
+                    let _ = imgs_tx.send(found_imgs);
+                });
+            }
+        });
 
-                            let (file_size, time_created, time_modified) =
-                                if let Ok(metadata) = entry.metadata() {
-                                    let file_size = metadata.len();
-                                    let time_created = if let Ok(created) = metadata.created() {
-                                        if let Ok(since_epoch) =
-                                            created.duration_since(SystemTime::UNIX_EPOCH)
-                                        {
-                                            since_epoch.as_secs()
-                                        } else {
-                                            0
-                                        }
-                                    } else {
-                                        0
-                                    };
-
-                                    let time_modified = if let Ok(modified) = metadata.modified() {
-                                        if let Ok(since_epoch) =
-                                            modified.duration_since(SystemTime::UNIX_EPOCH)
-                                        {
-                                            since_epoch.as_secs()
-                                        } else {
-                                            0
-                                        }
-                                    } else {
-                                        0
-                                    };
-
-                                    (file_size, time_created, time_modified)
-                                } else {
-                                    (0, 0, 0)
-                                };
-
-                            let imgdata = ImageData {
-                                file_name: file_name.to_string(),
-                                format: extension,
-                                path: path.clone(),
-                                allocation: None,
-                                size: file_size,
-                                time_created,
-                                time_modified,
-                                index,
-                            };
-
-                            if file_size != 0 {
-                                bysize
-                                    .entry(file_size)
-                                    .and_modify(|v| v.push(index))
-                                    .or_insert(vec![index]);
-                            }
-
-                            if time_created != 0 {
-                                bycreation
-                                    .entry(time_created)
-                                    .and_modify(|v| v.push(index))
-                                    .or_insert(vec![index]);
-                            }
-
-                            if time_modified != 0 {
-                                bymodification
-                                    .entry(time_modified)
-                                    .and_modify(|v| v.push(index))
-                                    .or_insert(vec![index]);
-                            }
-
-                            images.push(imgdata);
-
-                            index += 1;
-                        }
+        loop {
+            match dirs_rx.try_recv() {
+                Ok(dirs) => {
+                    for dir in dirs {
+                        directories.push_back(dir);
                     }
                 }
-            };
+                Err(_) => break,
+            }
         }
+
+        loop {
+            match imgs_rx.try_recv() {
+                Ok(imgs) => {
+                    for mut img in imgs {
+                        img.format.add_to_counter(&mut counter);
+                        img.index = index;
+                        index += 1;
+
+                        if img.size != 0 {
+                            bysize
+                                .entry(img.size)
+                                .and_modify(|v| v.push(img.index))
+                                .or_insert(vec![img.index]);
+                        }
+
+                        if img.time_created != 0 {
+                            bycreation
+                                .entry(img.time_created)
+                                .and_modify(|v| v.push(img.index))
+                                .or_insert(vec![img.index]);
+                        }
+
+                        if img.time_modified != 0 {
+                            bymodification
+                                .entry(img.time_modified)
+                                .and_modify(|v| v.push(img.index))
+                                .or_insert(vec![img.index]);
+                        }
+
+                        images.push(img);
+                    }
+                }
+
+                Err(_) => break,
+            }
+        }
+
         let _ = tx.send(images.len()).await;
     }
 
@@ -302,4 +275,89 @@ pub async fn find_images(
     let bysize: Vec<usize> = bysize.values().flatten().copied().collect();
 
     (images, bysize, bycreation, bymodification, counter)
+}
+
+fn search_directory(dir: &PathBuf) -> (Vec<PathBuf>, Vec<ImageData>) {
+    let entries: Vec<DirEntry> = match fs::read_dir(dir) {
+        Ok(x) => x.filter_map(|entry| entry.ok()).collect(),
+        Err(_) => return (vec![], vec![]),
+    };
+
+    let mut directories = vec![];
+    let mut images = vec![];
+
+    for entry in &entries {
+        let metadata = match entry.metadata() {
+            Ok(x) => x,
+            Err(_) => continue,
+        };
+
+        match metadata.is_dir() {
+            true => {
+                if !metadata.is_symlink() {
+                    directories.push(entry.path());
+                }
+            }
+            false => {
+                let path = entry.path();
+
+                let file_extension = path
+                    .extension()
+                    .unwrap_or_default()
+                    .to_str()
+                    .unwrap_or_default()
+                    .to_owned();
+                if let Some(file_name_osstring) = path.file_name() {
+                    if let (Some(extension), Some(file_name)) = (
+                        ImageFormat::from_string(&file_extension),
+                        file_name_osstring.to_str(),
+                    ) {
+                        let (file_size, time_created, time_modified) = {
+                            let file_size = metadata.len();
+                            let time_created = if let Ok(created) = metadata.created() {
+                                if let Ok(since_epoch) =
+                                    created.duration_since(SystemTime::UNIX_EPOCH)
+                                {
+                                    since_epoch.as_secs()
+                                } else {
+                                    0
+                                }
+                            } else {
+                                0
+                            };
+
+                            let time_modified = if let Ok(modified) = metadata.modified() {
+                                if let Ok(since_epoch) =
+                                    modified.duration_since(SystemTime::UNIX_EPOCH)
+                                {
+                                    since_epoch.as_secs()
+                                } else {
+                                    0
+                                }
+                            } else {
+                                0
+                            };
+
+                            (file_size, time_created, time_modified)
+                        };
+
+                        let imgdata = ImageData {
+                            file_name: file_name.to_string(),
+                            format: extension,
+                            path: path.clone(),
+                            allocation: None,
+                            size: file_size,
+                            time_created,
+                            time_modified,
+                            index: 0,
+                        };
+
+                        images.push(imgdata);
+                    }
+                }
+            }
+        };
+    }
+
+    (directories, images)
 }
