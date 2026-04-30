@@ -244,7 +244,13 @@ pub mod mymenu {
                         menu_button(
                             "Extension",
                             None,
-                            state.config.query.filter.extensions.is_some()
+                            state
+                                .config
+                                .query
+                                .filter
+                                .extensions
+                                .as_ref()
+                                .is_some_and(|x| !x.is_empty())
                         ),
                         menu_template(menu_items!(
                             (menu_button(
