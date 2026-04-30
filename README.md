@@ -67,6 +67,21 @@ Pages can also be navigated via keyboard arrow keys or by clicking GUI arrows in
 
 While in viewer mode, images can be navigated similarly; via keyboard arrow keys or the GUI arrows.
 
+## Optimisations
+When starting the application the loading screen appears. Under the hood, it traverses all directories on a user's computer to find images.
+
+Initially, the program creates a ***queue*** (FIFO) that contains user's drives as directories. Then, until the queue is empty, the program removes directories from the queue and reads its contents.
+Other directories it finds are inserted into the queue. 
+
+Images it finds are inserted into 4 separate data structures. The main one is a ***vector*** that contains objects of type `ImageData`, which as the name suggests contains information about an image.
+
+The other three are ***binary tree maps*** that contain key-value pairs. In these maps, keys represent the file size, the time of creation, and the time of last modification.
+There is a map for each of these key values. Values in the map are vectors with indices that act as a referrence to the main vector.
+
+I chose to hold key-value pairs in a binary tree map, because inserted values are automatically sorted relatively quickly.
+
+To further optimise the traversal, directories are read ***in parallel***.
+
 ## Purpose of this project
 
 This application was created as my *CS50x* final project. I chose Rust because it seemed to be complicated and I wanted to take up a challenge. I enjoyed Rust a lot.
