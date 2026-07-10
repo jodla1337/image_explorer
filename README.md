@@ -10,7 +10,7 @@ To run the application on Windows, the zip file must be unpacked where the execu
 
 ## Overview
 
-![Overview](https://2115420.xyz/static/overview.png)
+![Overview](https://2115420.xyz/staticfiles/imageexplorer/overview.png)
 
 The application traverses all directories on all hard drives, searches for images, and gathers paths to them. It supports images in the following formats:
 
@@ -31,7 +31,7 @@ The application traverses all directories on all hard drives, searches for image
 
 The application gives information about the loading time, the number of images it found overall and the number of images in a specific format.
 
-![Loading information](https://2115420.xyz/static/time_exec.png)
+![Loading information](https://2115420.xyz/staticfiles/imageexplorer/time_exec.png)
 
 ## Exploring
 
@@ -39,27 +39,27 @@ The application gives information about the loading time, the number of images i
 
 Images can be sorted by their file size, the time of their creation and the time of their modification. By clicking the arrow, sorting order can either be descending or ascending.
 
-![Sorting](https://2115420.xyz/static/sort.png)
+![Sorting](https://2115420.xyz/staticfiles/imageexplorer/sort.png)
 
 ### Filtering
 
 Images can be filtered by the name of a file and the encoding format.
 Multiple filters can be applied at once. Filters can be combined with sorting as well.
 
-![Filtering](https://2115420.xyz/static/filter.png)
+![Filtering](https://2115420.xyz/staticfiles/imageexplorer/filter.png)
 
 ### Viewer
 
 Images can be viewed when an image thumbnail is clicked.
 In the viewer mode an image can be zoomed and more detailed information is given, such as their path, file name, and metadata.
 
-![Viewer mode](https://2115420.xyz/static/viewer.png)
+![Viewer mode](https://2115420.xyz/staticfiles/imageexplorer/viewer.png)
 
 ### Navigation
 
 Page information is displayed in the footer bar at the bottom of the screen. It includes the current page field and the number of pages.
 
-![Navigation](https://2115420.xyz/static/navigation.png)
+![Navigation](https://2115420.xyz/staticfiles/imageexplorer/navigation.png)
 
 When using filters the number of pages will not be displayed until all available images are filtered.
 The explorer will navigate to a different page when a different page number is entered in the this field.
